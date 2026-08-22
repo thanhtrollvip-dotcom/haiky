@@ -1,0 +1,25 @@
+  workflows:
+  ios-html-app:
+    name: Build iOS IPA from HTML
+    max_build_duration: 30
+    instance_type: mac_mini_m1
+    environment:
+      node: 18
+    scripts:
+      - name: Install Capacitor & setup iOS
+        script: |
+          npm init -y
+          npm install @capacitor/core @capacitor/cli @capacitor/ios
+          npx cap init "HaikyApp" "com.haiky.app" --web-dir .
+          npx cap add ios
+          npx cap sync ios
+      - name: Build Unsigned IPA
+        script: |
+          cd ios/App
+          xcodebuild -workspace App.xcworkspace -scheme App -sdk iphoneos -configuration Release archive -archivePath $HOME/build/App.xcarchive CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
+          mkdir -p $HOME/build/Payload
+          cp -r $HOME/build/App.xcarchive/Products/Applications/App.app $HOME/build/Payload/
+          cd $HOME/build
+          zip -r HaikyApp.ipa Payload
+    artifacts:
+      - $HOME/build/*.ipa
