@@ -1,23 +1,85 @@
 workflows:
-  ios-html-app:
-    name: Build iOS IPA from HTML
+  ios-native-app:
+    name: Build iOS Native App
     max_build_duration: 30
     instance_type: mac_mini_m1
-    environment:
-      node: 18
     scripts:
-      - name: Build Webview App with Cordova
+      - name: Create Native iOS App
         script: |
-          npm install -g cordova
-          cordova create myapp com.haiky.app HaikyApp
-          rm -rf myapp/www/*
-          rsync -av --exclude='myapp' --exclude='.git' --exclude='codemagic.yaml' ./ myapp/www/
-          cd myapp
-          cordova platform add ios
-          xcodebuild -workspace platforms/ios/HaikyApp.xcworkspace -scheme HaikyApp -sdk iphoneos -configuration Release archive -archivePath $HOME/build/App.xcarchive CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
-          mkdir -p $HOME/build/Payload
-          cp -r $HOME/build/App.xcarchive/Products/Applications/HaikyApp.app $HOME/build/Payload/
-          cd $HOME/build
-          zip -r HaikyApp.ipa Payload
+          mkdir -p NativeApp/NativeApp
+          cd NativeApp
+          
+          # Tạo Swift App đơn giản
+          cat << 'EOF' > NativeApp/AppDelegate.swift
+          import UIKit
+          import WebKit
+
+          @main
+          class AppDelegate: UIResponder, UIApplicationDelegate {
+              var window: UIWindow?
+              func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+                  window = UIWindow(frame: UIScreen.main.bounds)
+                  let vc = WebViewController()
+                  window?.rootViewController = vc
+                  window?.makeKeyAndVisible()
+                  return true
+              }
+          }
+
+          class WebViewController: UIViewController, WKNavigationDelegate {
+              var webView: WKWebView!
+              override func viewDidLoad() {
+                  super.viewDidLoad()
+                  let config = WKWebViewConfiguration()
+                  config.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
+                  webView = WKWebView(frame: view.bounds, configuration: config)
+                  webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+                  webView.navigationDelegate = self
+                  view.addSubview(webView)
+                  
+                  if let htmlPath = Bundle.main.path(forResource: "index", ofType: "html") {
+                      let url = URL(fileURLWithPath: htmlPath)
+                      webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
+                  }
+              }
+          }
+          EOF
+
+          # Tạo Info.plist
+          cat << 'EOF' > NativeApp/Info.plist
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleIdentifier</key>
+              <string>com.haiky.app</string>
+              <key>CFBundleName</key>
+              <string>HaikyApp</string>
+              <key>CFBundlePackageType</key>
+              <string>APPL</string>
+              <key>CFBundleShortVersionString</key>
+              <string>1.0</string>
+              <key>CFBundleVersion</key>
+              <string>1</string>
+              <key>LSRequiresIPhoneOS</key>
+              <true/>
+          </dict>
+          </plist>
+          EOF
+
+          # Copy file index.html vào project
+          cp ../index.html NativeApp/index.html
+
+          # Compile Swift code thành File chạy trên iOS
+          xcrun -sdk iphoneos swiftc -o NativeApp/HaikyApp NativeApp/AppDelegate.swift -target arm64-apple-ios14.0 -Xlinker -rpath -Xlinker /System/Library/Frameworks -framework UIKit -framework WebKit
+          
+          # Đóng gói IPA
+          mkdir -p Payload/HaikyApp.app
+          cp NativeApp/HaikyApp Payload/HaikyApp.app/
+          cp NativeApp/Info.plist Payload/HaikyApp.app/
+          cp NativeApp/index.html Payload/HaikyApp.app/
+          
+          mkdir -p $HOME/build
+          zip -r $HOME/build/HaikyApp.ipa Payload
     artifacts:
       - $HOME/build/*.ipa
